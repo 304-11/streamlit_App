@@ -3,213 +3,463 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 
+
+# -------------------------
+# 기본 설정
+# -------------------------
+
 st.set_page_config(
-    page_title="주차장 정보 제공 시스템",
+    page_title="서울시 공영주차장 안내",
     page_icon="🚗",
     layout="wide"
 )
 
-st.title("🚗 주차장 정보 제공 시스템")
+
+st.title("🚗 서울시 공영주차장 정보 안내")
 
 
-# ----------------------------
+# -------------------------
 # CSV 읽기
-# ----------------------------
-def load_csv(file):
+# -------------------------
+
+def read_csv_auto(file):
+
     encodings = [
         "utf-8",
         "utf-8-sig",
         "cp949",
-        "euc-kr",
-        "latin1"
+        "euc-kr"
     ]
 
     for enc in encodings:
+
         try:
             file.seek(0)
-            df = pd.read_csv(file, encoding=enc)
-            st.success(f"파일 인코딩 : {enc}")
+
+            df = pd.read_csv(
+                file,
+                encoding=enc
+            )
+
+            st.success(
+                f"CSV 인코딩 : {enc}"
+            )
+
             return df
+
+
         except Exception:
-            continue
+            pass
+
 
     return None
 
 
-uploaded = st.file_uploader(
-    "CSV 업로드",
+
+# -------------------------
+# 컬럼 자동 찾기
+# -------------------------
+
+def find_column(df, keywords):
+
+    for col in df.columns:
+
+        col_name = str(col)
+
+        for key in keywords:
+
+            if key.lower() in col_name.lower():
+
+                return col
+
+
+    return None
+
+
+
+# -------------------------
+# CSV 업로드
+# -------------------------
+
+uploaded_file = st.file_uploader(
+    "서울시 공영주차장 CSV 업로드",
     type=["csv"]
 )
 
-if uploaded is None:
-    st.info("CSV 파일을 업로드하세요.")
+
+if uploaded_file is None:
+
+    st.info(
+        "서울시 공영주차장 CSV 파일을 업로드하세요."
+    )
+
     st.stop()
 
-df = load_csv(uploaded)
+
+
+df = read_csv_auto(uploaded_file)
+
 
 if df is None:
-    st.error("CSV를 읽을 수 없습니다.")
+
+    st.error(
+        "CSV 파일을 읽지 못했습니다."
+    )
+
     st.stop()
 
-# -----------------------------------
-# 컬럼명 자동 변경
-# -----------------------------------
-column_map = {}
 
-for col in df.columns:
 
-    c = col.strip()
+# -------------------------
+# 컬럼 자동 매칭
+# -------------------------
 
-    # 이름
-    if c in ["name", "주차장명", "주차장명칭", "명칭"]:
-        column_map[col] = "name"
+name_col = find_column(
+    df,
+    [
+        "주차장명",
+        "주차장명칭",
+        "시설명",
+        "name"
+    ]
+)
 
-    # 주소
-    elif c in [
-        "address",
+
+
+address_col = find_column(
+    df,
+    [
         "주소",
-        "도로명주소",
-        "소재지도로명주소",
-        "소재지지번주소"
-    ]:
-        column_map[col] = "address"
+        "도로명",
+        "소재지",
+        "address"
+    ]
+)
 
-    # 위도
-    elif c in [
-        "lat",
+
+
+lat_col = find_column(
+    df,
+    [
         "위도",
-        "LAT",
-        "Latitude"
-    ]:
-        column_map[col] = "lat"
+        "lat",
+        "latitude"
+    ]
+)
 
-    # 경도
-    elif c in [
+
+
+lon_col = find_column(
+    df,
+    [
+        "경도",
         "lon",
         "lng",
-        "경도",
-        "LON",
-        "Longitude"
-    ]:
-        column_map[col] = "lon"
+        "longitude"
+    ]
+)
 
-    # 요금
-    elif c in [
-        "fee",
-        "주차요금",
-        "기본주차요금",
+
+
+fee_col = find_column(
+    df,
+    [
         "요금",
-        "1시간요금"
-    ]:
-        column_map[col] = "fee"
+        "주차요금",
+        "기본요금",
+        "기본주차요금",
+        "최초",
+        "30분",
+        "10분"
+    ]
+)
 
-df.rename(columns=column_map, inplace=True)
 
-# 현재 컬럼 확인
-st.write("인식된 컬럼")
-st.write(df.columns.tolist())
 
-required = ["name", "address", "lat", "lon", "fee"]
+# -------------------------
+# 컬럼 변환
+# -------------------------
 
-missing = [c for c in required if c not in df.columns]
+mapping = {}
+
+
+if name_col:
+    mapping[name_col] = "name"
+
+
+if address_col:
+    mapping[address_col] = "address"
+
+
+if lat_col:
+    mapping[lat_col] = "lat"
+
+
+if lon_col:
+    mapping[lon_col] = "lon"
+
+
+if fee_col:
+    mapping[fee_col] = "fee"
+
+
+
+df.rename(
+    columns=mapping,
+    inplace=True
+)
+
+
+
+# -------------------------
+# 필수 데이터 확인
+# -------------------------
+
+required = [
+    "name",
+    "address",
+    "lat",
+    "lon"
+]
+
+
+missing = [
+    x for x in required
+    if x not in df.columns
+]
+
 
 if missing:
-    st.error(f"필수 컬럼이 없습니다 : {missing}")
+
+    st.error(
+        f"필수 컬럼을 찾지 못했습니다 : {missing}"
+    )
+
+    st.write(
+        "현재 CSV 컬럼명"
+    )
+
+    st.write(
+        df.columns.tolist()
+    )
+
     st.stop()
 
-# ----------------------------
-# 데이터 타입 변환
-# ----------------------------
-df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
-df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
-df["fee"] = pd.to_numeric(df["fee"], errors="coerce")
 
-df = df.dropna(subset=["lat", "lon"])
 
-# ----------------------------
-# 데이터 보기
-# ----------------------------
-st.subheader("주차장 목록")
+# 요금 없으면 처리
 
-st.dataframe(df, use_container_width=True)
+if "fee" not in df.columns:
 
-# ----------------------------
+    df["fee"] = "요금정보 없음"
+
+
+
+# -------------------------
+# 숫자 변환
+# -------------------------
+
+df["lat"] = pd.to_numeric(
+    df["lat"],
+    errors="coerce"
+)
+
+
+df["lon"] = pd.to_numeric(
+    df["lon"],
+    errors="coerce"
+)
+
+
+df = df.dropna(
+    subset=[
+        "lat",
+        "lon"
+    ]
+)
+
+
+
+# -------------------------
+# 데이터 확인
+# -------------------------
+
+st.subheader(
+    "📋 주차장 데이터"
+)
+
+
+st.dataframe(
+    df[
+        [
+            "name",
+            "address",
+            "fee"
+        ]
+    ],
+    use_container_width=True
+)
+
+
+
+# -------------------------
 # 주소 검색
-# ----------------------------
-st.subheader("주소 검색")
+# -------------------------
 
-keyword = st.text_input("주소 입력")
+st.subheader(
+    "🔍 주소 검색"
+)
 
-result_df = df
+
+keyword = st.text_input(
+    "검색할 주소 입력"
+)
+
+
+
+result = df.copy()
+
+
 
 if keyword:
 
-    result_df = df[
-        df["address"].astype(str).str.contains(
+    result = df[
+        df["address"]
+        .astype(str)
+        .str.contains(
             keyword,
             case=False,
             na=False
         )
     ]
 
-    if result_df.empty:
 
-        st.warning("검색 결과가 없습니다.")
 
-    else:
+if len(result) > 0:
 
-        st.success(f"{len(result_df)}개의 결과")
 
-        for _, row in result_df.iterrows():
+    st.success(
+        f"{len(result)}개 주차장 검색"
+    )
 
-            st.markdown(f"### {row['name']}")
-            st.write(row["address"])
-            st.metric("주차요금", f"{int(row['fee']):,}원")
 
-# ----------------------------
+    for _, row in result.iterrows():
+
+        st.write(
+            "### 🚗 "
+            + str(row["name"])
+        )
+
+
+        st.write(
+            "📍 "
+            + str(row["address"])
+        )
+
+
+        st.write(
+            "💰 요금 : "
+            + str(row["fee"])
+        )
+
+
+        st.divider()
+
+
+
+# -------------------------
 # 지도
-# ----------------------------
-st.subheader("주차장 지도")
+# -------------------------
 
-center = [
-    result_df["lat"].mean(),
-    result_df["lon"].mean()
-]
-
-m = folium.Map(
-    location=center,
-    zoom_start=12
+st.subheader(
+    "🗺 주차장 지도"
 )
 
-for _, row in result_df.iterrows():
 
-    tooltip = f"""
-    {row['address']}<br>
-    {int(row['fee']):,}원
-    """
+
+center = [
+
+    result["lat"].mean(),
+
+    result["lon"].mean()
+
+]
+
+
+
+map = folium.Map(
+
+    location=center,
+
+    zoom_start=12
+
+)
+
+
+
+for _, row in result.iterrows():
+
 
     popup = f"""
-    <h4>{row['name']}</h4>
-    <hr>
-    <b>주소</b><br>
-    {row['address']}<br><br>
 
-    <b>주차요금</b><br>
-    {int(row['fee']):,}원
+    <b>{row['name']}</b><br><br>
+
+    주소 : {row['address']}<br>
+
+    주차요금 : {row['fee']}
+
     """
 
+
+
+    tooltip = f"""
+
+    {row['address']}<br>
+
+    {row['fee']}
+
+    """
+
+
+
     folium.Marker(
-        [row["lat"], row["lon"]],
+
+        location=[
+
+            row["lat"],
+
+            row["lon"]
+
+        ],
+
+        popup=folium.Popup(
+
+            popup,
+
+            max_width=300
+
+        ),
+
         tooltip=tooltip,
-        popup=popup,
+
         icon=folium.Icon(
+
             color="blue",
-            icon="info-sign"
+
+            icon="car"
+
         )
-    ).add_to(m)
+
+    ).add_to(map)
+
+
 
 st_folium(
-    m,
+
+    map,
+
     width=1200,
+
     height=700
+
 )
